@@ -23,12 +23,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import lora.gpu_env  # noqa: F401
+import train.gpu_env  # noqa: F401
 
 import config
 from eval.checkpoints import list_available_variants, prepare_checkpoint_dir
 from eval.run_eval_suite import main as run_eval_suite
-from lora.utils import merge_lora_adapters
+from train.utils import merge_lora_adapters
 from runs.paths import active_session_id, ensure_session, eval_run_dir, lora_root
 
 

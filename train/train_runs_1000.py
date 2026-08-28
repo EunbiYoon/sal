@@ -36,7 +36,7 @@ def main() -> int:
         cmd = [
             py,
             "-m",
-            "lora.train",
+            "train",
             "--pairs",
             str(pairs),
             "--out",

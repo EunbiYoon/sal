@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import lora.gpu_env  # noqa: F401
+import train.gpu_env  # noqa: F401
 
 import os
 import shutil
@@ -33,7 +33,7 @@ def _check_bitsandbytes_cuda() -> None:
     except Exception as exc:
         raise RuntimeError(
             "bitsandbytes 4-bit probe failed on GPU. "
-            "Run lora/train.sh from a CUDA GPU allocation."
+            "Run train/train.sh from a CUDA GPU allocation."
         ) from exc
 
 

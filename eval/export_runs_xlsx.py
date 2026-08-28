@@ -316,8 +316,8 @@ def export(out_path: Path | None = None) -> Path:
 
     with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
         df_index = pd.DataFrame(index_rows)
-        df_index.to_excel(writer, sheet_name="설정_목록", index=False)
-        _style_sheet(writer.sheets["설정_목록"], df_index)
+        df_index.to_excel(writer, sheet_name="configuration_index", index=False)
+        _style_sheet(writer.sheets["configuration_index"], df_index)
 
         for fp, dirs in sorted(groups.items(), key=lambda x: sheet_names[x[0]]):
             ep_rows: list[dict] = []
@@ -336,7 +336,7 @@ def export(out_path: Path | None = None) -> Path:
 
             if pair_rows:
                 pair_sheet = f"{sheet[:25]}_pairs"[:31]
-                used = {sheet, "설정_목록"}
+                used = {sheet, "configuration_index"}
                 n = 2
                 while pair_sheet in used:
                     pair_sheet = f"{sheet[:22]}_pairs{n}"[:31]

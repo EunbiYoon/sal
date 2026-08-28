@@ -48,6 +48,7 @@ case "$VARIANT" in
     ;;
 esac
 
+CALLER_RUN_ID_SET="${RUN_ID+x}"
 CALLER_RUN_ID="${RUN_ID-}"
 if [[ -f .env ]]; then
   set -a
@@ -55,7 +56,12 @@ if [[ -f .env ]]; then
   source .env
   set +a
 fi
-[[ -n "$CALLER_RUN_ID" ]] && export RUN_ID="$CALLER_RUN_ID"
+if [[ -n "$CALLER_RUN_ID_SET" && -n "$CALLER_RUN_ID" ]]; then
+  export RUN_ID="$CALLER_RUN_ID"
+else
+  # RUN_ID in .env is intentionally ignored: an unspecified run starts a new session.
+  export RUN_ID="$(date -u +%Y%m%d_%H%M%S)"
+fi
 
 export CONDA_ENVS_PATH="${CONDA_ENVS_PATH:-/scratch/workspace/eunbiyoon_umass_edu-paper/${USER}/.conda/envs}"
 export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS:-/scratch/workspace/eunbiyoon_umass_edu-paper/${USER}/.conda/pkgs}"
@@ -85,7 +91,6 @@ if ((VISIBLE_COUNT != DDP_NUM_GPUS)); then
   exit 1
 fi
 
-export RUN_ID="${RUN_ID:-$(date -u +%Y%m%d_%H%M%S)}"
 RESUME_ARGS=()
 if [[ "$RESUME" == "true" ]]; then
   RESUME_ARGS+=(--resume)
@@ -93,7 +98,7 @@ fi
 
 echo "DDP session=${RUN_ID} variant=${VARIANT} GPUs=${DDP_NUM_GPUS} grad_accum=${DDP_GRAD_ACCUM} resume=${RESUME}"
 
-exec python -m torch.distributed.run --standalone --nproc_per_node="$DDP_NUM_GPUS" -m lora.train \
+exec python -m torch.distributed.run --standalone --nproc_per_node="$DDP_NUM_GPUS" -m train \
   --paper \
   --tensorboard \
   --pairs "$PAIRS" \

@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Values explicitly supplied before ./lora/train.sh override .env.
+# Values explicitly supplied before ./train/train.sh override .env.
 CALLER_RUN_ID_SET="${RUN_ID+x}"
 CALLER_RUN_ID="${RUN_ID-}"
 CALLER_TRAIN_VARIANTS_SET="${TRAIN_VARIANTS+x}"
@@ -26,7 +26,12 @@ if [[ -f .env ]]; then
   set +a
 fi
 
-[[ -n "$CALLER_RUN_ID_SET" ]] && export RUN_ID="$CALLER_RUN_ID"
+if [[ -n "$CALLER_RUN_ID_SET" && -n "$CALLER_RUN_ID" ]]; then
+  export RUN_ID="$CALLER_RUN_ID"
+else
+  # RUN_ID in .env is intentionally ignored: an unspecified run starts a new session.
+  export RUN_ID="$(date -u +%Y%m%d_%H%M%S)"
+fi
 [[ -n "$CALLER_TRAIN_VARIANTS_SET" ]] && export TRAIN_VARIANTS="$CALLER_TRAIN_VARIANTS"
 [[ -n "$CALLER_TRAIN_NUM_GPUS_SET" ]] && export TRAIN_NUM_GPUS="$CALLER_TRAIN_NUM_GPUS"
 [[ -n "$CALLER_TRAIN_GPU_IDS_SET" ]] && export TRAIN_GPU_IDS="$CALLER_TRAIN_GPU_IDS"
@@ -53,7 +58,6 @@ nvidia-smi -L
 python -c "import torch; assert torch.cuda.is_available(), 'torch.cuda is unavailable'"
 python -c "import bitsandbytes.cextension as e; assert e.lib is not None and getattr(e.lib, 'compiled_with_cuda', False), 'bitsandbytes CUDA is unavailable'"
 
-export RUN_ID="${RUN_ID:-$(date -u +%Y%m%d_%H%M%S)}"
 DATA_DIR="${DATA_DIR:-data/paper}"
 TRAIN_NUM_GPUS="${TRAIN_NUM_GPUS:-3}"
 TRAIN_VARIANTS="${TRAIN_VARIANTS:-filter_on,filter_off,core,aux,all,rw}"
@@ -116,7 +120,7 @@ PY
   fi
 
   echo "[$(date '+%H:%M:%S')] GPU ${gpu} -> ${variant}: ${pairs}"
-  CUDA_VISIBLE_DEVICES="$visible_devices" python -m lora.train \
+  CUDA_VISIBLE_DEVICES="$visible_devices" python -m train \
     --paper \
     --tensorboard \
     --pairs "$pairs" \

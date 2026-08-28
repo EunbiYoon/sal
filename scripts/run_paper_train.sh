@@ -38,11 +38,11 @@ case "$VARIANT" in
 esac
 
 # CUDA_VISIBLE_DEVICES is intentionally inherited from the caller. Within that
-# restricted view, lora/train.sh uses logical GPU 0 for this single worker.
+# restricted view, train/train.sh uses logical GPU 0 for this single worker.
 export TRAIN_VARIANTS="$VARIANT"
 export TRAIN_NUM_GPUS=1
 export TRAIN_GPU_IDS=0
 export TRAIN_VISIBLE_DEVICES=""
 export TRAIN_AUTO_MERGE=false
 
-exec "$ROOT/lora/train.sh"
+exec "$ROOT/train/train.sh"

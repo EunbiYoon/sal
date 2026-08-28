@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import lora.gpu_env  # noqa: F401 — NVHPC libcublas path before bnb
+import train.gpu_env  # noqa: F401 — NVHPC libcublas path before bnb
 
 from game_envs.agents import HeuristicAgent, LoRALLMAgent, OllamaAgent
 from config import (
@@ -61,9 +61,9 @@ from eval.metrics import EvalMetrics, evaluate_agent, metrics_to_dict
 from eval.paths import new_run_dir, resolve_run_dir, table_out_path, utc_stamp, write_latest_pointer
 from eval.progress import EvalLogger
 from eval.resume import parse_eval_log, parse_games_arg, resume_summary
-from lora.utils import attach_lora, build_lora_config, load_base_model, merge_lora_adapters
+from train.utils import attach_lora, build_lora_config, load_base_model, merge_lora_adapters
 
-TRAIN_SCRIPT = PROJECT_ROOT / "lora" / "train.py"
+TRAIN_MODULE = "train"
 
 
 def fmt(x: float) -> str:
@@ -401,7 +401,7 @@ def _train_all_variants(args) -> None:
             print(f"SKIP {v}: no pairs in {data}")
             continue
         cmd = [
-            sys.executable, str(TRAIN_SCRIPT),
+            sys.executable, "-m", TRAIN_MODULE,
             "--pairs", str(data),
             "--out", str(out),
             "--epochs", str(args.epochs),

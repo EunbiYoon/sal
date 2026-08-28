@@ -14,8 +14,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import config
-from lora.paths import write_latest_pointer
-from lora.run_manifest import (
+from train.paths import write_latest_pointer
+from train.run_manifest import (
     build_config_snapshot,
     finalize_run_manifest,
     persist_run_manifest,
@@ -137,7 +137,7 @@ def backfill_variant(
         else [
             sys.executable,
             "-m",
-            "lora.train",
+            "train",
             "--pairs",
             str(pairs_path.relative_to(config.PROJECT_ROOT)),
             "--out",

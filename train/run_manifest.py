@@ -1,4 +1,4 @@
-"""Persist LoRA train run metadata (command, config snapshot, README)."""
+"""Persist LoRA training run metadata and configuration snapshots."""
 
 from __future__ import annotations
 
@@ -150,12 +150,14 @@ def persist_run_manifest(
         },
         "resolved_config": snapshot,
         "train_metrics": None,
+        "best_checkpoint": None,
+        "best_checkpoint_step": None,
+        "best_train_loss": None,
     }
     (run_dir / "run_info.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    (run_dir / "README.md").write_text(_format_run_readme(manifest, snapshot), encoding="utf-8")
 
 
 def finalize_run_manifest(
@@ -173,11 +175,6 @@ def finalize_run_manifest(
     if train_metrics is not None:
         manifest["train_metrics"] = train_metrics
     path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
-    snapshot = manifest.get("resolved_config") or {}
-    (run_dir / "README.md").write_text(
-        _format_run_readme(manifest, snapshot, train_metrics=train_metrics),
-        encoding="utf-8",
-    )
 
 
 def publish_adapter(adapter_dir: Path, publish_dir: Path) -> None:
@@ -193,72 +190,3 @@ def publish_adapter(adapter_dir: Path, publish_dir: Path) -> None:
             shutil.copytree(item, dest)
         else:
             shutil.copy2(item, publish_dir / item.name)
-
-
-def _format_run_readme(
-    manifest: dict[str, Any],
-    snapshot: dict[str, Any],
-    *,
-    train_metrics: dict[str, Any] | None = None,
-) -> str:
-    metrics = train_metrics or manifest.get("train_metrics")
-    metrics_block = ""
-    if metrics:
-        metrics_block = (
-            "\n## 학습 결과\n\n"
-            f"| 항목 | 값 |\n|------|-----|\n"
-            f"| train_runtime (s) | `{metrics.get('train_runtime')}` |\n"
-            f"| train_loss | `{metrics.get('train_loss')}` |\n"
-            f"| global_step | `{metrics.get('global_step')}` |\n"
-        )
-
-    dpo_src = snapshot.get("dpo_source_run") or "(unknown)"
-    return f"""# LoRA train run `{Path(manifest["run_dir"]).name}`
-
-DPO LoRA 학습 1회 실행 기록입니다. 재현·비교용으로 **명령어·설정 스냅샷·데이터 출처**를 저장합니다.
-
-## 실행 명령
-
-```bash
-{manifest["command"]}
-```
-
-- 시작: `{manifest.get("started_at")}`
-- 종료: `{manifest.get("finished_at") or "(running)"}`
-- 상태: `{manifest.get("status")}`
-- variant: `{snapshot.get("variant")}`
-- publish: `{snapshot.get("publish_dir")}`
-
-## 설정 요약 (`config_snapshot.yaml`)
-
-| 항목 | 값 |
-|------|-----|
-| student model (blind / LoRA target) | `{snapshot.get("student_model")}` |
-| teacher model (oracle) | `{snapshot.get("teacher_model")}` |
-| pairs | `{snapshot.get("pairs")}` ({snapshot.get("pairs_count")} rows) |
-| epochs | `{snapshot.get("epochs")}` |
-| LoRA | r=`{snapshot.get("lora_r")}`, alpha=`{snapshot.get("lora_alpha")}`, target=`{snapshot.get("lora_target")}` |
-| max_length | `{snapshot.get("max_length")}` |
-| grad_accum | `{snapshot.get("gradient_accumulation_steps")}` |
-| DPO beta | `{snapshot.get("dpo_beta")}` |
-| paper mode | `{snapshot.get("paper")}` |
-| DPO rollout run | `{dpo_src}` |
-{metrics_block}
-## 출력 파일
-
-| 경로 | 설명 |
-|------|------|
-| `config_snapshot.yaml` | 학습 하이퍼파라미터 스냅샷 |
-| `run_info.json` | 기계-readable 메타데이터 |
-| `pairs_source.jsonl` | 학습에 사용한 pairs 복사본 |
-| `pairs_manifest.json` | `dpo/data/.../latest_manifest.json` (있을 때) |
-| `adapter/` | LoRA 체크포인트 + 최종 adapter |
-
-## Eval
-
-publish 경로 adapter로 Table eval:
-
-```bash
-./eval/eval.sh
-```
-"""

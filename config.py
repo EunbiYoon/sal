@@ -126,6 +126,18 @@ DPO_BETA = _env_float("DPO_BETA", 0.1)
 LEARNING_RATE = _env_float("LEARNING_RATE", 5e-5)
 NUM_EPOCHS = _env_int("TRAIN_EPOCHS", 10)
 MAX_TRAIN_STEPS = _env_optional_int("TRAIN_MAX_STEPS")
+VARIANT_MAX_TRAIN_STEPS = {
+    variant: _env_optional_int(f"TRAIN_MAX_STEPS_{variant.upper()}")
+    for variant in ("filter_on", "filter_off", "core", "aux", "all", "rw")
+}
+
+
+def max_train_steps_for_variant(variant: str) -> int | None:
+    """Return a variant-specific step cap, falling back to the shared cap."""
+    variant_value = VARIANT_MAX_TRAIN_STEPS.get(variant)
+    return MAX_TRAIN_STEPS if variant_value is None else variant_value
+
+
 EPISODES_PER_ENV = _env_int("EVAL_EPISODES", 12)
 EVAL_SEED = _env_int("EVAL_SEED", 42)
 EVAL_MAX_TOKENS = _env_int("EVAL_MAX_TOKENS", 192)
@@ -275,7 +287,7 @@ LOCAL_GRADIENT_ACCUMULATION = 4  # lower VRAM peak during DPO (chosen+rejected)
 WARMUP_RATIO = _env_float("WARMUP_RATIO", 0.05)
 LR_SCHEDULER = _env_str("LR_SCHEDULER", "cosine")
 LOGGING_STEPS = _env_int("LOGGING_STEPS", 10)
-SAVE_STEPS = _env_int("SAVE_STEPS", 20)
+SAVE_STEPS = _env_int("SAVE_STEPS", 10)
 PAPER_SAVE_TOTAL_LIMIT = _env_int("SAVE_TOTAL_LIMIT", 100)
 
 TABLE1_VARIANTS = [

@@ -389,7 +389,7 @@ def _replace_table4_md(md: str, table4: dict) -> str:
     block = [
         "## Table 4 — Frontier benchmark (CR + TFT-CR)",
         "",
-        "동일 12-env eval. CR(ID), CR(HO), TFT-CR — **로컬 rollout만** (paper 참조값 없음).",
+        "Same 12-environment evaluation. CR(ID), CR(HO), TFT-CR — **local rollouts only** (no paper reference values).",
         "",
         *_format_table4_frontier_block(table4),
         "",
@@ -569,7 +569,7 @@ def _inject_table5_coupling_md(md: str, table5: dict) -> str:
     block = [
         "## Table 5 — Reasoning-action coupling (paper_v01)",
         "",
-        "fc(ID), ac(ID), fc(HO) — **로컬 eval만** (paper 참조값 없음).",
+        "fc(ID), ac(ID), fc(HO) — **local evaluation only** (no paper reference values).",
         "",
         *_format_table5_coupling_block(table5),
         "",
@@ -811,7 +811,7 @@ def _inject_table7_training_md(md: str, table7: dict) -> str:
     block = [
         "## Table 7 — Training hyperparameters (local)",
         "",
-        "DPO variant별 pair 수, publish checkpoint step, final train loss (로컬 lora/runs 기준).",
+        "Pair count, published checkpoint step, and final training loss by DPO variant (from local lora/runs).",
         "",
         *_format_table7_training_block(table7),
         "",
@@ -846,7 +846,7 @@ def _inject_table9_companion_md(md: str, table9: dict, variants: list[str]) -> s
     block = [
         "## Table 9 — Companion metrics (local)",
         "",
-        "env별 action consistency (ac), final-round fc, exploitability. 로컬 eval만 (paper 참조값 없음).",
+        "Per-environment action consistency (ac), final-round fc, and exploitability. Local evaluation only (no paper reference values).",
         "",
     ]
     for v in show:
