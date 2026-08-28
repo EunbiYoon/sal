@@ -5,6 +5,7 @@ from __future__ import annotations
 import lora.gpu_env  # noqa: F401
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +77,13 @@ def load_base_model(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    kwargs: dict[str, Any] = {"device_map": "auto"}
+    local_rank = int(os.environ.get("LOCAL_RANK", "-1"))
+    if local_rank >= 0:
+        torch.cuda.set_device(local_rank)
+        device_map: str | dict[str, int] = {"": local_rank}
+    else:
+        device_map = "auto"
+    kwargs: dict[str, Any] = {"device_map": device_map}
     if use_4bit:
         kwargs["quantization_config"] = build_bnb_config()
 
@@ -99,7 +106,7 @@ def load_lora_adapter(
     use_4bit: bool = True,
 ):
     model, tokenizer = load_base_model(model_id=model_id, use_4bit=use_4bit)
-    model = PeftModel.from_pretrained(model, str(adapter_path))
+    model = PeftModel.from_pretrained(model, str(adapter_path), is_trainable=True)
     return model, tokenizer
 
 
@@ -131,4 +138,8 @@ def merge_lora_adapters(
             merged[key] = aux_sd[key]
 
     save_file(merged, str(out_path / aux_files[0].name))
+    adapter_config = Path(aux_path) / "adapter_config.json"
+    if adapter_config.is_file():
+        shutil.copy2(adapter_config, out_path / adapter_config.name)
+
     return out_path

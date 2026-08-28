@@ -45,6 +45,8 @@ class MinimalCheckpointCallback(TrainerCallback):
     """Keep only the adapter and Trainer state required to resume a run."""
 
     def on_save(self, args, state, control, **kwargs):
+        if not args.should_save:
+            return control
         checkpoint_dir = Path(args.output_dir) / f"checkpoint-{state.global_step}"
         if not checkpoint_dir.is_dir():
             return control
@@ -352,9 +354,10 @@ def main() -> None:
         grad_accum=args.grad_accum,
         publish_dir=publish_dir,
     )
-    if resume_ckpt is None:
+    is_main_process = int(os.environ.get("RANK", "0")) == 0
+    if resume_ckpt is None and is_main_process:
         persist_run_manifest(run_dir, argv=sys.argv, args=args, snapshot=snapshot)
-    else:
+    elif resume_ckpt is not None and is_main_process:
         info = run_dir / "run_info.json"
         if info.is_file():
             manifest = json.loads(info.read_text(encoding="utf-8"))
@@ -394,6 +397,7 @@ def main() -> None:
         save_steps=config.SAVE_STEPS,
         save_total_limit=save_total_limit,
         gradient_checkpointing=config.GRADIENT_CHECKPOINTING,
+        ddp_find_unused_parameters=False,
         # fp16 GradScaler breaks on torch 2.11+win (bf16 unscale NotImplementedError)
         fp16=config.TRAIN_FP16,
         bf16=config.TRAIN_BF16,
@@ -416,16 +420,18 @@ def main() -> None:
     try:
         trainer.train(resume_from_checkpoint=str(resume_ckpt) if resume_ckpt else None)
         trainer.save_model(str(adapter_dir))
-        publish_adapter(adapter_dir, publish_dir)
         train_metrics = _extract_train_metrics(trainer)
     except Exception:
         status = "failed"
-        finalize_run_manifest(run_dir, status=status)
+        if is_main_process:
+            finalize_run_manifest(run_dir, status=status)
         raise
     else:
-        finalize_run_manifest(run_dir, status=status, train_metrics=train_metrics)
-        if not args.no_timestamp_out:
-            write_latest_pointer(run_dir)
+        if is_main_process:
+            publish_adapter(adapter_dir, publish_dir)
+            finalize_run_manifest(run_dir, status=status, train_metrics=train_metrics)
+            if not args.no_timestamp_out:
+                write_latest_pointer(run_dir)
 
     print(
         f"Saved LoRA adapter run={run_dir} publish={publish_dir} (base={model_id})",

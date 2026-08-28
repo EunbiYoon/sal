@@ -5,12 +5,33 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Values explicitly supplied before ./lora/train.sh override .env.
+CALLER_RUN_ID_SET="${RUN_ID+x}"
+CALLER_RUN_ID="${RUN_ID-}"
+CALLER_TRAIN_VARIANTS_SET="${TRAIN_VARIANTS+x}"
+CALLER_TRAIN_VARIANTS="${TRAIN_VARIANTS-}"
+CALLER_TRAIN_NUM_GPUS_SET="${TRAIN_NUM_GPUS+x}"
+CALLER_TRAIN_NUM_GPUS="${TRAIN_NUM_GPUS-}"
+CALLER_TRAIN_GPU_IDS_SET="${TRAIN_GPU_IDS+x}"
+CALLER_TRAIN_GPU_IDS="${TRAIN_GPU_IDS-}"
+CALLER_TRAIN_AUTO_MERGE_SET="${TRAIN_AUTO_MERGE+x}"
+CALLER_TRAIN_AUTO_MERGE="${TRAIN_AUTO_MERGE-}"
+CALLER_TRAIN_VISIBLE_DEVICES_SET="${TRAIN_VISIBLE_DEVICES+x}"
+CALLER_TRAIN_VISIBLE_DEVICES="${TRAIN_VISIBLE_DEVICES-}"
+
 if [[ -f .env ]]; then
   set -a
   # shellcheck disable=SC1091
   source .env
   set +a
 fi
+
+[[ -n "$CALLER_RUN_ID_SET" ]] && export RUN_ID="$CALLER_RUN_ID"
+[[ -n "$CALLER_TRAIN_VARIANTS_SET" ]] && export TRAIN_VARIANTS="$CALLER_TRAIN_VARIANTS"
+[[ -n "$CALLER_TRAIN_NUM_GPUS_SET" ]] && export TRAIN_NUM_GPUS="$CALLER_TRAIN_NUM_GPUS"
+[[ -n "$CALLER_TRAIN_GPU_IDS_SET" ]] && export TRAIN_GPU_IDS="$CALLER_TRAIN_GPU_IDS"
+[[ -n "$CALLER_TRAIN_AUTO_MERGE_SET" ]] && export TRAIN_AUTO_MERGE="$CALLER_TRAIN_AUTO_MERGE"
+[[ -n "$CALLER_TRAIN_VISIBLE_DEVICES_SET" ]] && export TRAIN_VISIBLE_DEVICES="$CALLER_TRAIN_VISIBLE_DEVICES"
 
 export CONDA_ENVS_PATH="${CONDA_ENVS_PATH:-/scratch/workspace/eunbiyoon_umass_edu-paper/${USER}/.conda/envs}"
 export CONDA_PKGS_DIRS="${CONDA_PKGS_DIRS:-/scratch/workspace/eunbiyoon_umass_edu-paper/${USER}/.conda/pkgs}"
@@ -35,6 +56,10 @@ python -c "import bitsandbytes.cextension as e; assert e.lib is not None and get
 export RUN_ID="${RUN_ID:-$(date -u +%Y%m%d_%H%M%S)}"
 DATA_DIR="${DATA_DIR:-data/paper}"
 TRAIN_NUM_GPUS="${TRAIN_NUM_GPUS:-3}"
+TRAIN_VARIANTS="${TRAIN_VARIANTS:-filter_on,filter_off,core,aux,all,rw}"
+TRAIN_GPU_IDS="${TRAIN_GPU_IDS:-}"
+TRAIN_AUTO_MERGE="${TRAIN_AUTO_MERGE:-true}"
+TRAIN_VISIBLE_DEVICES="${TRAIN_VISIBLE_DEVICES:-}"
 LOG_DIR="runs/${RUN_ID}/train_logs"
 mkdir -p "$LOG_DIR"
 
@@ -49,18 +74,55 @@ if ((VISIBLE_GPUS < TRAIN_NUM_GPUS)); then
   exit 1
 fi
 
+if [[ -n "$TRAIN_GPU_IDS" ]]; then
+  IFS=',' read -r -a GPU_IDS <<< "$TRAIN_GPU_IDS"
+else
+  GPU_IDS=()
+  for ((gpu = 0; gpu < TRAIN_NUM_GPUS; gpu++)); do
+    GPU_IDS+=("$gpu")
+  done
+fi
+if ((${#GPU_IDS[@]} != TRAIN_NUM_GPUS)); then
+  echo "ERROR: TRAIN_GPU_IDS must contain exactly TRAIN_NUM_GPUS entries" >&2
+  exit 1
+fi
+if [[ -n "$TRAIN_VISIBLE_DEVICES" ]] && ((TRAIN_NUM_GPUS != 1)); then
+  echo "ERROR: TRAIN_VISIBLE_DEVICES model sharding requires TRAIN_NUM_GPUS=1" >&2
+  exit 1
+fi
+
 train_variant() {
   local gpu="$1"
   local variant="$2"
   local pairs="$3"
   local log_file="${LOG_DIR}/${variant}.log"
+  local visible_devices="${TRAIN_VISIBLE_DEVICES:-$gpu}"
+  local run_info="runs/${RUN_ID}/lora/${variant}/run_info.json"
+  local -a resume_args=()
+
+  if [[ -f "$run_info" ]] && python - "$run_info" <<'PY'
+import json
+import sys
+raise SystemExit(0 if json.load(open(sys.argv[1])).get("status") == "completed" else 1)
+PY
+  then
+    echo "[$(date '+%H:%M:%S')] GPU ${gpu} -> ${variant}: already completed; skipping"
+    return 0
+  fi
+
+  if compgen -G "runs/${RUN_ID}/lora/${variant}/adapter/checkpoint-*" >/dev/null; then
+    resume_args+=(--resume)
+    echo "[$(date '+%H:%M:%S')] GPU ${gpu} -> ${variant}: resuming latest checkpoint"
+  fi
+
   echo "[$(date '+%H:%M:%S')] GPU ${gpu} -> ${variant}: ${pairs}"
-  CUDA_VISIBLE_DEVICES="$gpu" python -m lora.train \
+  CUDA_VISIBLE_DEVICES="$visible_devices" python -m lora.train \
     --paper \
     --tensorboard \
     --pairs "$pairs" \
     --out "$variant" \
-    2>&1 | sed -u "s/^/[GPU ${gpu}][${variant}] /" | tee "$log_file"
+    "${resume_args[@]}" \
+    2>&1 | sed -u "s/^/[GPU ${visible_devices}][${variant}] /" | tee "$log_file"
 }
 
 [[ -f "${DATA_DIR}/a_beta_all.jsonl" ]] || {
@@ -68,28 +130,46 @@ train_variant() {
   exit 1
 }
 
-VARIANTS=(filter_on filter_off core aux all rw)
-PAIR_FILES=(
-  "${DATA_DIR}/filter_on.jsonl"
-  "${DATA_DIR}/filter_off.jsonl"
-  "${DATA_DIR}/a_beta_core.jsonl"
-  "${DATA_DIR}/a_beta_aux.jsonl"
-  "${DATA_DIR}/a_beta_all.jsonl"
-  "${DATA_DIR}/a_beta_rw.jsonl"
+declare -A PAIRS_BY_VARIANT=(
+  [filter_on]="${DATA_DIR}/filter_on.jsonl"
+  [filter_off]="${DATA_DIR}/filter_off.jsonl"
+  [core]="${DATA_DIR}/a_beta_core.jsonl"
+  [aux]="${DATA_DIR}/a_beta_aux.jsonl"
+  [all]="${DATA_DIR}/a_beta_all.jsonl"
+  [rw]="${DATA_DIR}/a_beta_rw.jsonl"
 )
 
+IFS=',' read -r -a REQUESTED_VARIANTS <<< "$TRAIN_VARIANTS"
+VARIANTS=()
+PAIR_FILES=()
+for raw_variant in "${REQUESTED_VARIANTS[@]}"; do
+  variant="${raw_variant//[[:space:]]/}"
+  if [[ -z "$variant" || -z "${PAIRS_BY_VARIANT[$variant]+x}" ]]; then
+    echo "ERROR: invalid TRAIN_VARIANTS entry: ${raw_variant}" >&2
+    exit 1
+  fi
+  VARIANTS+=("$variant")
+  PAIR_FILES+=("${PAIRS_BY_VARIANT[$variant]}")
+done
+
 worker() {
-  local gpu="$1"
+  local slot="$1"
+  local gpu="$2"
   local index
-  for ((index = gpu; index < ${#VARIANTS[@]}; index += TRAIN_NUM_GPUS)); do
+  for ((index = slot; index < ${#VARIANTS[@]}; index += WORKER_COUNT)); do
     train_variant "$gpu" "${VARIANTS[index]}" "${PAIR_FILES[index]}"
   done
 }
 
-echo "Session: ${RUN_ID}; parallel workers: ${TRAIN_NUM_GPUS}"
+WORKER_COUNT="$TRAIN_NUM_GPUS"
+if ((WORKER_COUNT > ${#VARIANTS[@]})); then
+  WORKER_COUNT="${#VARIANTS[@]}"
+fi
+
+echo "Session: ${RUN_ID}; variants: ${VARIANTS[*]}; parallel workers: ${WORKER_COUNT}"
 PIDS=()
-for ((gpu = 0; gpu < TRAIN_NUM_GPUS; gpu++)); do
-  worker "$gpu" &
+for ((gpu = 0; gpu < WORKER_COUNT; gpu++)); do
+  worker "$gpu" "${GPU_IDS[gpu]}" &
   PIDS+=("$!")
 done
 
@@ -114,10 +194,16 @@ if ((FAILED)); then
   exit 1
 fi
 
-CUDA_VISIBLE_DEVICES=0 python -m eval.run_table \
-  --table 5 \
-  --merge \
-  --checkpoint-dir "runs/${RUN_ID}/lora"
+if [[ "$TRAIN_AUTO_MERGE" == "true" ]] \
+  && [[ -f "runs/${RUN_ID}/lora/aux/adapter_config.json" ]] \
+  && [[ -f "runs/${RUN_ID}/lora/all/adapter_config.json" ]]; then
+  CUDA_VISIBLE_DEVICES="${GPU_IDS[0]}" python -m eval.run_table \
+    --table 5 \
+    --merge \
+    --checkpoint-dir "runs/${RUN_ID}/lora"
+else
+  echo "Merge skipped (TRAIN_AUTO_MERGE=${TRAIN_AUTO_MERGE}; requires completed aux and all)"
+fi
 
 echo "Training complete: runs/${RUN_ID}/lora"
 echo "Worker logs: ${LOG_DIR}"
